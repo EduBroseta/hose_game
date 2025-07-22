@@ -1,0 +1,65 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrolling */
+    background-color: #87CEEB; /* Sky blue background */
+    touch-action: manipulation; /* Prevent default touch actions like double tap zoom */
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+#gameCanvas {
+    background-color: #ADD8E6; /* Lighter blue for game area, optional */
+    border: 2px solid black;
+    display: block; /* Remove extra space below canvas */
+}
+
+/* Ensure portrait mode, or at least optimize for it */
+@media screen and (orientation: landscape) {
+    body {
+        /* You might want to display a message to rotate device */
+        /* For now, just optimize for portrait */
+        transform: rotate(90deg);
+        transform-origin: bottom left;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 100vh;
+        height: 100vw;
+    }
+}
+
+#score-display {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    font-family: sans-serif;
+    font-size: 1.5em;
+    color: #333;
+    z-index: 10;
+}
+
+#message-display {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: sans-serif;
+    font-size: 1.8em;
+    font-weight: bold;
+    color: #000;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 15px;
+    border-radius: 10px;
+    z-index: 20;
+    display: none; /* Hidden by default, shown for messages */
+}
