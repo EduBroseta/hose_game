@@ -4,6 +4,12 @@ const ctx = canvas.getContext('2d');
 const scoreDisplay = document.getElementById('score-display');
 const messageDisplay = document.getElementById('message-display');
 
+// New: GIF elements
+const splashGif = new Image();
+splashGif.src = 'splash_animation.gif'; // Ensure this path is correct
+let isGifPlaying = false;
+let gifElement = null; // To hold the created img element
+
 let W, H; // Canvas width and height
 let hoseX, hoseY; // Hose base position
 let hoseLength = 20; // Initial hose length
@@ -24,7 +30,8 @@ const WATER_STAIN_DURATION = 800; // ms water stays visible
 const WATER_STAIN_MAX_RADIUS = 50;
 
 let flowers = [];
-const FLOWER_RADIUS = 25;
+// MODIFICATION: Flower radius doubled
+const FLOWER_RADIUS = 50; // Original was 25, now 50
 const FLOWER_SPEED = 1; // Pixels per frame
 const FLOWER_SPAWN_INTERVAL = 2000; // ms
 let lastFlowerSpawnTime = 0;
@@ -83,7 +90,8 @@ function drawWaterStain() {
 
 // Draw a flower (simple circle for now)
 function drawFlower(flower) {
-    ctx.fillStyle = flower.hit ? 'rgba(0, 255, 0, 0.5)' : 'red'; // Green if hit, red otherwise
+    // MODIFICATION: Flower background flesh tone, no petals, brown dot
+    ctx.fillStyle = flower.hit ? 'rgba(0, 255, 0, 0.5)' : '#FFDEAD'; // Flesh tone
     ctx.beginPath();
     ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
     ctx.fill();
@@ -91,19 +99,8 @@ function drawFlower(flower) {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Draw small circles for flower petals, for a slightly better look
-    ctx.fillStyle = 'yellow';
-    const petalCount = 6;
-    for (let i = 0; i < petalCount; i++) {
-        const angle = (i / petalCount) * Math.PI * 2;
-        const petalX = flower.x + (FLOWER_RADIUS * 0.7) * Math.cos(angle);
-        const petalY = flower.y + (FLOWER_RADIUS * 0.7) * Math.sin(angle);
-        ctx.beginPath();
-        ctx.arc(petalX, petalY, FLOWER_RADIUS * 0.3, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    // Center of the flower
-    ctx.fillStyle = 'orange';
+    // Center dot brown
+    ctx.fillStyle = 'brown';
     ctx.beginPath();
     ctx.arc(flower.x, flower.y, FLOWER_RADIUS * 0.2, 0, Math.PI * 2);
     ctx.fill();
@@ -145,9 +142,12 @@ function handleShake(event) {
     hoseLength = Math.max(MIN_HOSE_LENGTH, Math.min(hoseLength, MAX_HOSE_LENGTH));
 
     // If hose reached max length, trigger water pour
-    if (hoseLength >= MAX_HOSE_LENGTH && !waterStain.active) {
+    if (hoseLength >= MAX_HOSE_LENGTH && !waterStain.active && !isGifPlaying) { // Check if GIF is not already playing
         pourWater();
-        hoseLength = MIN_HOSE_LENGTH; // Reset hose after pouring
+        // MODIFICATION: Freeze game and play GIF
+        gameActive = false; // Freeze the game
+        playSplashGif();
+        // hoseLength = MIN_HOSE_LENGTH; // Reset hose after pouring - this will now happen on touch
     }
 }
 
@@ -170,11 +170,13 @@ function pourWater() {
     }, 100); // Short delay before starting fade
 }
 
+// MODIFICATION: Control single flower appearance
 function spawnFlower() {
     if (!gameActive) return;
 
     const currentTime = Date.now();
-    if (currentTime - lastFlowerSpawnTime > FLOWER_SPAWN_INTERVAL) {
+    // Only spawn if no flowers are currently active
+    if (flowers.length === 0 && (currentTime - lastFlowerSpawnTime > FLOWER_SPAWN_INTERVAL)) {
         const startSide = Math.random() < 0.5 ? 'left' : 'right';
         const startX = startSide === 'left' ? -FLOWER_RADIUS : W + FLOWER_RADIUS;
         const direction = startSide === 'left' ? 1 : -1; // 1 for right, -1 for left
@@ -237,11 +239,52 @@ function checkCollisions() {
     }
 }
 
+// MODIFICATION: Play Splash GIF
+function playSplashGif() {
+    if (isGifPlaying) return;
+
+    isGifPlaying = true;
+    gifElement = document.createElement('img');
+    gifElement.src = 'splash_animation.gif';
+    gifElement.id = 'splash-gif';
+    gifElement.style.position = 'absolute';
+    gifElement.style.top = '50%';
+    gifElement.style.left = '50%';
+    gifElement.style.transform = 'translate(-50%, -50%)';
+    gifElement.style.maxWidth = '90%'; // As big as possible
+    gifElement.style.maxHeight = '90%';
+    gifElement.style.objectFit = 'contain';
+    gifElement.style.zIndex = '100'; // Ensure it's on top
+    document.getElementById('game-container').appendChild(gifElement);
+
+    gifElement.onload = () => {
+        // A common trick to replay GIF is to re-set its src
+        // But for one-time play, we'll remove it after a duration
+        // We need to estimate GIF duration or use libraries for precise timing
+        // For simplicity, let's assume a fixed duration, or let it play once and then remove
+        setTimeout(() => {
+            if (gifElement) {
+                gifElement.remove();
+                gifElement = null;
+                isGifPlaying = false;
+            }
+        }, 1500); // Adjust this duration based on your GIF's actual length
+    };
+}
 
 // --- Game Loop ---
 let lastFrameTime = 0;
 function gameLoop(currentTime) {
-    if (!gameActive) return;
+    if (!gameActive) {
+        // If game is not active, but GIF is playing, clear canvas but don't update game state
+        if (isGifPlaying) {
+            ctx.clearRect(0, 0, W, H);
+            drawWaterStain(); // Still draw the water stain so user can see it
+            flowers.forEach(drawFlower); // Still draw flowers for collision visibility
+        }
+        requestAnimationFrame(gameLoop); // Keep requesting frames to show GIF/frozen state
+        return;
+    }
 
     const deltaTime = currentTime - lastFrameTime; // Not strictly needed for this game, but good practice
     lastFrameTime = currentTime;
@@ -279,6 +322,13 @@ function startGame() {
     messageDisplay.style.display = 'block';
     messageDisplay.textContent = 'Shake to Grow Hose!';
 
+    // Remove any existing GIF element
+    if (gifElement) {
+        gifElement.remove();
+        gifElement = null;
+    }
+    isGifPlaying = false;
+
     setTimeout(() => {
         messageDisplay.style.display = 'none'; // Hide instructions after a few seconds
     }, 3000);
@@ -310,11 +360,30 @@ function endGame() {
 // Listen for device motion (accelerometer)
 window.addEventListener('devicemotion', handleShake);
 
+// MODIFICATION: Resume game on touch
+window.addEventListener('touchstart', (event) => {
+    if (!gameActive && !isGifPlaying && hoseLength >= MAX_HOSE_LENGTH) {
+        // This condition ensures we only resume after a pour and GIF has finished
+        hoseLength = MIN_HOSE_LENGTH; // Reset hose
+        gameActive = true; // Resume game
+        // Optionally re-hide message display if it was shown for game over
+        if (messageDisplay.textContent.includes("Game Over!")) {
+            messageDisplay.style.display = 'none';
+        }
+        requestAnimationFrame(gameLoop); // Ensure game loop is active
+    } else if (!gameStarted) { // If game hasn't started yet, allow touch to start it
+        startGame();
+    }
+});
+
+
 // Initial canvas setup
 window.addEventListener('load', () => {
     resizeCanvas();
     // Start game automatically for Telegram Web Apps, or show a start button
-    startGame(); // Auto-start for simplicity with Telegram bot
+    // MODIFICATION: Don't auto-start for now, wait for first touch
+    messageDisplay.style.display = 'block';
+    messageDisplay.textContent = 'Tap to Start!';
 });
 
 // Handle screen orientation changes (though we aim for portrait fixed)
@@ -335,11 +404,24 @@ function debugGameControl(event) {
         if (hoseLength < MAX_HOSE_LENGTH) hoseLength = MAX_HOSE_LENGTH;
         if (hoseLength >= MAX_HOSE_LENGTH && !waterStain.active) {
             pourWater();
-            hoseLength = MIN_HOSE_LENGTH;
+            // MODIFICATION: Freeze game and play GIF manually
+            gameActive = false;
+            playSplashGif();
         }
     }
     if (event.key === 'g') { // Toggle game active for debug
         if (gameActive) endGame(); else startGame();
+    }
+    // MODIFICATION: Debug key for resuming after pour
+    if (event.key === 'r') {
+        if (!gameActive && !isGifPlaying && hoseLength >= MAX_HOSE_LENGTH) {
+            hoseLength = MIN_HOSE_LENGTH; // Reset hose
+            gameActive = true; // Resume game
+            if (messageDisplay.textContent.includes("Game Over!")) {
+                messageDisplay.style.display = 'none';
+            }
+            requestAnimationFrame(gameLoop);
+        }
     }
 }
 window.addEventListener('keydown', debugGameControl); // Remove for production
