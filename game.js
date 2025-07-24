@@ -10,6 +10,10 @@ splashGif.src = 'splash_animation.gif'; // Ensure this path is correct
 let isGifPlaying = false;
 let gifElement = null; // To hold the created img element
 
+// New: Titties image
+const tittiesImage = new Image();
+tittiesImage.src = 'titties.png'; // Ensure this path is correct and image exists
+
 let W, H; // Canvas width and height
 let hoseX, hoseY; // Hose base position
 let hoseLength = 20; // Initial hose length
@@ -24,14 +28,16 @@ let isShaking = false;
 let shakeAccumulator = 0; // Tracks if shaking is continuous enough to grow hose
 
 let waterStain = {
-    x: 0, y: 0, radius: 0, active: false, opacity: 1, color: 'rgba(0, 100, 200, 0.8)'
+    x: 0, y: 0, radius: 0, active: false, opacity: 1, color: 'rgba(0, 100, 200, 0.8)',
+    // New: Properties for triangle blob
+    baseWidth: 100, // Initial base width of the inverted triangle
+    height: 100 // Height of the inverted triangle
 };
-const WATER_STAIN_DURATION = 800; // ms water stays visible
-const WATER_STAIN_MAX_RADIUS = 50;
+const WATER_STAIN_DURATION = 800; // ms water stays visible (now used for fading opacity)
+const WATER_STAIN_MAX_RADIUS = 50; // Still used for fading logic, though shape is different
 
-let flowers = [];
-// MODIFICATION: Flower radius doubled
-const FLOWER_RADIUS = 50; // Original was 25, now 50
+let flowers = []; // Renamed from balls to flowers, consistent with original code
+const FLOWER_RADIUS = 50; // Original was 25, now 50. This will be the half-width/height of the image
 const FLOWER_SPEED = 1; // Pixels per frame
 const FLOWER_SPAWN_INTERVAL = 2000; // ms
 let lastFlowerSpawnTime = 0;
@@ -76,34 +82,58 @@ function drawHose() {
     ctx.stroke();
 }
 
-// Draw an irregular water stain (simplified as a circle for now, but can be complex path)
+// Draw an inverted triangle water stain
 function drawWaterStain() {
     if (!waterStain.active) return;
 
     ctx.fillStyle = waterStain.color.replace('0.8', waterStain.opacity); // Adjust opacity
+
     ctx.beginPath();
-    // For irregular shape, you'd define a path with multiple points
-    // For now, let's use a simple circle for demonstration
-    ctx.arc(waterStain.x, waterStain.y, waterStain.radius, 0, Math.PI * 2);
+    // Tip of the hose is waterStain.x, waterStain.y
+    // Base of the triangle is at waterStain.y + waterStain.height
+    // Points: (tip), (bottom-left), (bottom-right)
+    ctx.moveTo(waterStain.x, waterStain.y); // Tip of the hose
+    ctx.lineTo(waterStain.x - waterStain.baseWidth / 2, waterStain.y + waterStain.height); // Bottom-left
+    ctx.lineTo(waterStain.x + waterStain.baseWidth / 2, waterStain.y + waterStain.height); // Bottom-right
+    ctx.closePath();
     ctx.fill();
 }
 
-// Draw a flower (simple circle for now)
+// Draw a flower (now an image)
 function drawFlower(flower) {
-    // MODIFICATION: Flower background flesh tone, no petals, brown dot
-    ctx.fillStyle = flower.hit ? 'rgba(0, 255, 0, 0.5)' : '#FFDEAD'; // Flesh tone
-    ctx.beginPath();
-    ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+    if (!tittiesImage.complete || !tittiesImage.naturalWidth) {
+        // Fallback to drawing a simple circle if image not loaded
+        ctx.fillStyle = flower.hit ? 'rgba(0, 255, 0, 0.5)' : '#FFDEAD'; // Flesh tone
+        ctx.beginPath();
+        ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = 'brown';
+        ctx.beginPath();
+        ctx.arc(flower.x, flower.y, FLOWER_RADIUS * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+
+    // Draw the image centered at flower.x, flower.y
+    const imgWidth = FLOWER_RADIUS * 2;
+    const imgHeight = FLOWER_RADIUS * 2;
+    ctx.drawImage(tittiesImage, flower.x - imgWidth / 2, flower.y - imgHeight / 2, imgWidth, imgHeight);
+
+    if (flower.hit) {
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.5)'; // Green overlay if hit
+        ctx.beginPath();
+        ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+    }
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Center dot brown
-    ctx.fillStyle = 'brown';
     ctx.beginPath();
-    ctx.arc(flower.x, flower.y, FLOWER_RADIUS * 0.2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
 }
 
 // --- Game Logic ---
@@ -147,7 +177,7 @@ function handleShake(event) {
         // MODIFICATION: Freeze game and play GIF
         gameActive = false; // Freeze the game
         playSplashGif();
-        // hoseLength = MIN_HOSE_LENGTH; // Reset hose after pouring - this will now happen on touch
+        // The hose will be reset to MIN_HOSE_LENGTH on touch
     }
 }
 
@@ -155,22 +185,20 @@ function pourWater() {
     waterStain.active = true;
     waterStain.x = hoseX;
     waterStain.y = hoseY - MAX_HOSE_LENGTH; // Tip of the hose
-    waterStain.radius = WATER_STAIN_MAX_RADIUS;
-    waterStain.opacity = 0.8;
+    waterStain.baseWidth = W * 0.4; // Make the base width proportional to canvas width
+    waterStain.height = W * 0.4; // Make height proportional too, adjust as needed
 
-    setTimeout(() => {
-        // Start fading the water stain
-        const fadeInterval = setInterval(() => {
-            waterStain.opacity -= 0.05;
-            if (waterStain.opacity <= 0) {
-                waterStain.active = false;
-                clearInterval(fadeInterval);
-            }
-        }, WATER_STAIN_DURATION / 16); // Approx 16 steps to fade out
-    }, 100); // Short delay before starting fade
+    // Start fading the water stain immediately
+    const fadeInterval = setInterval(() => {
+        waterStain.opacity -= 0.01; // Slower fade for 'forever' display until tap
+        if (waterStain.opacity <= 0) {
+            waterStain.opacity = 0; // Don't go below zero
+            // clearInterval(fadeInterval); // Do NOT clear interval here, keep it for forever display
+        }
+    }, 50); // Adjust fade speed
 }
 
-// MODIFICATION: Control single flower appearance
+// Control single flower appearance
 function spawnFlower() {
     if (!gameActive) return;
 
@@ -178,13 +206,20 @@ function spawnFlower() {
     // Only spawn if no flowers are currently active
     if (flowers.length === 0 && (currentTime - lastFlowerSpawnTime > FLOWER_SPAWN_INTERVAL)) {
         const startSide = Math.random() < 0.5 ? 'left' : 'right';
-        const startX = startSide === 'left' ? -FLOWER_RADIUS : W + FLOWER_RADIUS;
-        const direction = startSide === 'left' ? 1 : -1; // 1 for right, -1 for left
+        const startX = startSide === 'left' ? -FLOWER_RADIUS * 2 : W + FLOWER_RADIUS * 2; // Start completely off screen
         const y = H / 2 - FLOWER_RADIUS - 50 - Math.random() * (H / 4); // Above middle, random height
+
         flowers.push({
             x: startX,
             y: y,
-            direction: direction,
+            originalX: startX,
+            originalY: y,
+            // New: Movement properties
+            moveType: Math.floor(Math.random() * 3), // 0: diagonal, 1: circular, 2: irregular
+            angle: Math.random() * Math.PI * 2, // For circular movement
+            amplitude: FLOWER_RADIUS * (0.5 + Math.random()), // For irregular movement
+            phase: Math.random() * Math.PI * 2, // For irregular movement
+            direction: startSide === 'left' ? 1 : -1, // 1 for right, -1 for left
             hit: false,
             id: Date.now() // Unique ID for tracking
         });
@@ -195,10 +230,27 @@ function spawnFlower() {
 function updateFlowers() {
     for (let i = flowers.length - 1; i >= 0; i--) {
         const flower = flowers[i];
-        flower.x += flower.direction * FLOWER_SPEED;
+
+        switch (flower.moveType) {
+            case 0: // Diagonal movement
+                flower.x += flower.direction * FLOWER_SPEED;
+                flower.y += (flower.direction * FLOWER_SPEED * 0.5); // Slight vertical component
+                break;
+            case 1: // Circular movement
+                flower.angle += 0.05; // Speed of rotation
+                flower.x = flower.originalX + Math.cos(flower.angle) * FLOWER_RADIUS * 1.5;
+                flower.y = flower.originalY + Math.sin(flower.angle) * FLOWER_RADIUS * 1.5;
+                // Move the center of the circle across the screen
+                flower.originalX += flower.direction * FLOWER_SPEED * 0.5;
+                break;
+            case 2: // Slightly irregular movement (sine wave like)
+                flower.x += flower.direction * FLOWER_SPEED;
+                flower.y = flower.originalY + Math.sin(flower.x / 50 + flower.phase) * flower.amplitude;
+                break;
+        }
 
         // Remove flower if off-screen
-        if (flower.x < -FLOWER_RADIUS * 2 || flower.x > W + FLOWER_RADIUS * 2) {
+        if (flower.x < -FLOWER_RADIUS * 3 || flower.x > W + FLOWER_RADIUS * 3) {
             flowers.splice(i, 1);
         }
     }
@@ -207,29 +259,33 @@ function updateFlowers() {
 function checkCollisions() {
     if (!waterStain.active) return;
 
-    const waterBounds = {
-        x: waterStain.x - waterStain.radius,
-        y: waterStain.y - waterStain.radius,
-        width: waterStain.radius * 2,
-        height: waterStain.radius * 2
-    };
+    // Collision for triangle blob: Check if flower center is within triangle
+    // Get the coordinates of the triangle vertices
+    const tipX = waterStain.x;
+    const tipY = waterStain.y;
+    const bottomLeftX = waterStain.x - waterStain.baseWidth / 2;
+    const bottomLeftY = waterStain.y + waterStain.height;
+    const bottomRightX = waterStain.x + waterStain.baseWidth / 2;
+    const bottomRightY = waterStain.y + waterStain.height;
+
+    // Helper function to calculate signed area of a triangle
+    function sign(p1x, p1y, p2x, p2y, p3x, p3y) {
+        return (p1x - p3x) * (p2y - p3y) - (p2x - p3x) * (p1y - p3y);
+    }
 
     for (const flower of flowers) {
         if (flower.hit) continue; // Skip already hit flowers
 
-        const flowerBounds = {
-            x: flower.x - FLOWER_RADIUS,
-            y: flower.y - FLOWER_RADIUS,
-            width: FLOWER_RADIUS * 2,
-            height: FLOWER_RADIUS * 2
-        };
+        // Check if the center of the flower is inside the triangle
+        const d1 = sign(flower.x, flower.y, tipX, tipY, bottomLeftX, bottomLeftY);
+        const d2 = sign(flower.x, flower.y, bottomLeftX, bottomLeftY, bottomRightX, bottomRightY);
+        const d3 = sign(flower.x, flower.y, bottomRightX, bottomRightY, tipX, tipY);
 
-        // Simple AABB collision detection
-        if (waterBounds.x < flowerBounds.x + flowerBounds.width &&
-            waterBounds.x + waterBounds.width > flowerBounds.x &&
-            waterBounds.y < flowerBounds.y + flowerBounds.height &&
-            waterBounds.y + waterBounds.height > flowerBounds.y) {
+        const has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+        const has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
 
+        // If not all same sign, it's inside (or on edge)
+        if (!(has_neg && has_pos)) {
             // Collision detected!
             score++;
             scoreDisplay.textContent = `Score: ${score}`;
@@ -239,7 +295,7 @@ function checkCollisions() {
     }
 }
 
-// MODIFICATION: Play Splash GIF
+// Play Splash GIF
 function playSplashGif() {
     if (isGifPlaying) return;
 
@@ -248,40 +304,47 @@ function playSplashGif() {
     gifElement.src = 'splash_animation.gif';
     gifElement.id = 'splash-gif';
     gifElement.style.position = 'absolute';
-    gifElement.style.top = '50%';
+    gifElement.style.zIndex = '100'; // Ensure it's on top
+
+    // Calculate GIF position to match hose tip
+    const hoseTipY = hoseY - MAX_HOSE_LENGTH;
+    gifElement.style.bottom = `${H - hoseTipY}px`; // Bottom of GIF at hose tip
     gifElement.style.left = '50%';
-    gifElement.style.transform = 'translate(-50%, -50%)';
+    gifElement.style.transform = 'translateX(-50%)'; // Center horizontally
+
     gifElement.style.maxWidth = '90%'; // As big as possible
     gifElement.style.maxHeight = '90%';
     gifElement.style.objectFit = 'contain';
-    gifElement.style.zIndex = '100'; // Ensure it's on top
     document.getElementById('game-container').appendChild(gifElement);
 
     gifElement.onload = () => {
-        // A common trick to replay GIF is to re-set its src
-        // But for one-time play, we'll remove it after a duration
-        // We need to estimate GIF duration or use libraries for precise timing
-        // For simplicity, let's assume a fixed duration, or let it play once and then remove
+        // We only want the GIF to play once and then disappear
+        // The setTimeout should be for the GIF's actual duration.
+        // A common trick to ensure one-time playback without precise duration:
+        // Duplicate the GIF and play the new one, then remove the old.
+        // Or simply remove it after a sensible duration if it loops internally.
+        const gifDurationGuess = 1500; // Adjust this based on your GIF's actual duration
+
         setTimeout(() => {
             if (gifElement) {
                 gifElement.remove();
                 gifElement = null;
                 isGifPlaying = false;
             }
-        }, 1500); // Adjust this duration based on your GIF's actual length
+        }, gifDurationGuess);
     };
 }
 
 // --- Game Loop ---
 let lastFrameTime = 0;
 function gameLoop(currentTime) {
+    // MODIFICATION: Always draw hose, water stain, and flowers if active, or just if game is frozen but water is active
+    ctx.clearRect(0, 0, W, H);
+    drawHose();
+    drawWaterStain();
+    flowers.forEach(drawFlower);
+
     if (!gameActive) {
-        // If game is not active, but GIF is playing, clear canvas but don't update game state
-        if (isGifPlaying) {
-            ctx.clearRect(0, 0, W, H);
-            drawWaterStain(); // Still draw the water stain so user can see it
-            flowers.forEach(drawFlower); // Still draw flowers for collision visibility
-        }
         requestAnimationFrame(gameLoop); // Keep requesting frames to show GIF/frozen state
         return;
     }
@@ -289,18 +352,10 @@ function gameLoop(currentTime) {
     const deltaTime = currentTime - lastFrameTime; // Not strictly needed for this game, but good practice
     lastFrameTime = currentTime;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, W, H);
-
     // Update game state
     spawnFlower();
     updateFlowers();
     checkCollisions(); // Check for hits when water is active
-
-    // Draw elements
-    drawHose();
-    drawWaterStain();
-    flowers.forEach(drawFlower);
 
     // Request next frame
     requestAnimationFrame(gameLoop);
@@ -316,6 +371,7 @@ function startGame() {
     hoseLength = MIN_HOSE_LENGTH;
     flowers = [];
     waterStain.active = false;
+    waterStain.opacity = 1; // Reset opacity for new pour
     lastShakeTime = 0;
     shakeAccumulator = 0;
     isShaking = false;
@@ -362,9 +418,11 @@ window.addEventListener('devicemotion', handleShake);
 
 // MODIFICATION: Resume game on touch
 window.addEventListener('touchstart', (event) => {
-    if (!gameActive && !isGifPlaying && hoseLength >= MAX_HOSE_LENGTH) {
-        // This condition ensures we only resume after a pour and GIF has finished
+    // Only respond if game is not active (frozen after pour) and GIF has finished playing
+    if (!gameActive && !isGifPlaying && waterStain.active) { // waterStain.active ensures it was a pour that froze it
         hoseLength = MIN_HOSE_LENGTH; // Reset hose
+        waterStain.active = false; // Deactivate water stain
+        waterStain.opacity = 1; // Reset opacity for next pour
         gameActive = true; // Resume game
         // Optionally re-hide message display if it was shown for game over
         if (messageDisplay.textContent.includes("Game Over!")) {
@@ -381,9 +439,14 @@ window.addEventListener('touchstart', (event) => {
 window.addEventListener('load', () => {
     resizeCanvas();
     // Start game automatically for Telegram Web Apps, or show a start button
-    // MODIFICATION: Don't auto-start for now, wait for first touch
     messageDisplay.style.display = 'block';
     messageDisplay.textContent = 'Tap to Start!';
+    tittiesImage.onload = () => {
+        console.log("Titties image loaded successfully.");
+    };
+    tittiesImage.onerror = () => {
+        console.error("Failed to load titties.png. Check path and file existence.");
+    };
 });
 
 // Handle screen orientation changes (though we aim for portrait fixed)
@@ -404,7 +467,6 @@ function debugGameControl(event) {
         if (hoseLength < MAX_HOSE_LENGTH) hoseLength = MAX_HOSE_LENGTH;
         if (hoseLength >= MAX_HOSE_LENGTH && !waterStain.active) {
             pourWater();
-            // MODIFICATION: Freeze game and play GIF manually
             gameActive = false;
             playSplashGif();
         }
@@ -412,10 +474,12 @@ function debugGameControl(event) {
     if (event.key === 'g') { // Toggle game active for debug
         if (gameActive) endGame(); else startGame();
     }
-    // MODIFICATION: Debug key for resuming after pour
+    // Debug key for resuming after pour
     if (event.key === 'r') {
-        if (!gameActive && !isGifPlaying && hoseLength >= MAX_HOSE_LENGTH) {
+        if (!gameActive && !isGifPlaying && waterStain.active) {
             hoseLength = MIN_HOSE_LENGTH; // Reset hose
+            waterStain.active = false;
+            waterStain.opacity = 1;
             gameActive = true; // Resume game
             if (messageDisplay.textContent.includes("Game Over!")) {
                 messageDisplay.style.display = 'none';
