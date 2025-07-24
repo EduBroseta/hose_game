@@ -28,7 +28,7 @@ let isShaking = false;
 let shakeAccumulator = 0; // Tracks if shaking is continuous enough to grow hose
 
 let waterStain = {
-    x: 0, y: 0, radius: 0, active: false, opacity: 1, color: 'rgba(0, 100, 200, 0.8)',
+    x: 0, y: 0, radius: 0, active: false, opacity: 1, color: 'rgba(128, 128, 128, 0.8)', // Grey color
     // New: Properties for triangle blob
     baseWidth: 100, // Initial base width of the inverted triangle
     height: 100 // Height of the inverted triangle
@@ -82,19 +82,20 @@ function drawHose() {
     ctx.stroke();
 }
 
-// Draw an inverted triangle water stain
+// Draw an upright triangle water stain
 function drawWaterStain() {
     if (!waterStain.active) return;
 
     ctx.fillStyle = waterStain.color.replace('0.8', waterStain.opacity); // Adjust opacity
 
     ctx.beginPath();
-    // Tip of the hose is waterStain.x, waterStain.y
-    // Base of the triangle is at waterStain.y + waterStain.height
-    // Points: (tip), (bottom-left), (bottom-right)
-    ctx.moveTo(waterStain.x, waterStain.y); // Tip of the hose
-    ctx.lineTo(waterStain.x - waterStain.baseWidth / 2, waterStain.y + waterStain.height); // Bottom-left
-    ctx.lineTo(waterStain.x + waterStain.baseWidth / 2, waterStain.y + waterStain.height); // Bottom-right
+    // Base of the triangle is at hose tip: waterStain.x, waterStain.y
+    // Vertex is above the hose tip: waterStain.x, waterStain.y - waterStain.height
+    // Points: (bottom-left), (bottom-right), (top-vertex)
+    const hoseTipY = hoseY - MAX_HOSE_LENGTH; // Y-coordinate of the hose tip
+    ctx.moveTo(waterStain.x - waterStain.baseWidth / 2, hoseTipY); // Bottom-left of base
+    ctx.lineTo(waterStain.x + waterStain.baseWidth / 2, hoseTipY); // Bottom-right of base
+    ctx.lineTo(waterStain.x, hoseTipY - waterStain.height); // Top vertex
     ctx.closePath();
     ctx.fill();
 }
@@ -129,11 +130,12 @@ function drawFlower(flower) {
         ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
         ctx.fill();
     }
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
-    ctx.stroke();
+    // Removed the black stroke around the PNGs
+    // ctx.strokeStyle = 'black';
+    // ctx.lineWidth = 2;
+    // ctx.beginPath();
+    // ctx.arc(flower.x, flower.y, FLOWER_RADIUS, 0, Math.PI * 2);
+    // ctx.stroke();
 }
 
 // --- Game Logic ---
@@ -184,18 +186,16 @@ function handleShake(event) {
 function pourWater() {
     waterStain.active = true;
     waterStain.x = hoseX;
-    waterStain.y = hoseY - MAX_HOSE_LENGTH; // Tip of the hose
+    waterStain.y = hoseY - MAX_HOSE_LENGTH; // This is the hose tip Y coordinate
     waterStain.baseWidth = W * 0.4; // Make the base width proportional to canvas width
     waterStain.height = W * 0.4; // Make height proportional too, adjust as needed
 
     // Start fading the water stain immediately
-    const fadeInterval = setInterval(() => {
-        waterStain.opacity -= 0.01; // Slower fade for 'forever' display until tap
-        if (waterStain.opacity <= 0) {
-            waterStain.opacity = 0; // Don't go below zero
-            // clearInterval(fadeInterval); // Do NOT clear interval here, keep it for forever display
-        }
-    }, 50); // Adjust fade speed
+    // The fade is now essentially keeping it visible, but with a slight, continuous decay
+    // to give it a "forever" display until tap.
+    // The previous implementation had a `setTimeout` then `setInterval` which made it disappear.
+    // Now, it will just continuously reduce opacity slightly, but stay active.
+    waterStain.opacity = 0.8; // Reset opacity when pouring
 }
 
 // Control single flower appearance
@@ -231,6 +231,11 @@ function updateFlowers() {
     for (let i = flowers.length - 1; i >= 0; i--) {
         const flower = flowers[i];
 
+        // Do not update flower position if game is not active (frozen screen)
+        if (!gameActive) {
+            continue;
+        }
+
         switch (flower.moveType) {
             case 0: // Diagonal movement
                 flower.x += flower.direction * FLOWER_SPEED;
@@ -238,10 +243,10 @@ function updateFlowers() {
                 break;
             case 1: // Circular movement
                 flower.angle += 0.05; // Speed of rotation
+                // Center of the circle also moves across the screen
+                flower.originalX += flower.direction * FLOWER_SPEED * 0.5;
                 flower.x = flower.originalX + Math.cos(flower.angle) * FLOWER_RADIUS * 1.5;
                 flower.y = flower.originalY + Math.sin(flower.angle) * FLOWER_RADIUS * 1.5;
-                // Move the center of the circle across the screen
-                flower.originalX += flower.direction * FLOWER_SPEED * 0.5;
                 break;
             case 2: // Slightly irregular movement (sine wave like)
                 flower.x += flower.direction * FLOWER_SPEED;
@@ -259,14 +264,14 @@ function updateFlowers() {
 function checkCollisions() {
     if (!waterStain.active) return;
 
-    // Collision for triangle blob: Check if flower center is within triangle
-    // Get the coordinates of the triangle vertices
+    // Get the coordinates of the triangle vertices (current state)
+    const hoseTipY = hoseY - MAX_HOSE_LENGTH; // Y-coordinate of the hose tip
     const tipX = waterStain.x;
-    const tipY = waterStain.y;
+    const tipY = hoseTipY - waterStain.height; // Top vertex of the triangle
     const bottomLeftX = waterStain.x - waterStain.baseWidth / 2;
-    const bottomLeftY = waterStain.y + waterStain.height;
+    const bottomLeftY = hoseTipY; // Bottom-left of base
     const bottomRightX = waterStain.x + waterStain.baseWidth / 2;
-    const bottomRightY = waterStain.y + waterStain.height;
+    const bottomRightY = hoseTipY; // Bottom-right of base
 
     // Helper function to calculate signed area of a triangle
     function sign(p1x, p1y, p2x, p2y, p3x, p3y) {
@@ -288,7 +293,7 @@ function checkCollisions() {
         if (!(has_neg && has_pos)) {
             // Collision detected!
             score++;
-            scoreDisplay.textContent = `Score: ${score}`;
+            scoreDisplay.textContent = `Score: ${score}`; // Update score display
             flower.hit = true; // Mark flower as hit
             // You could play a sound or animation here
         }
@@ -319,10 +324,6 @@ function playSplashGif() {
 
     gifElement.onload = () => {
         // We only want the GIF to play once and then disappear
-        // The setTimeout should be for the GIF's actual duration.
-        // A common trick to ensure one-time playback without precise duration:
-        // Duplicate the GIF and play the new one, then remove the old.
-        // Or simply remove it after a sensible duration if it loops internally.
         const gifDurationGuess = 1500; // Adjust this based on your GIF's actual duration
 
         setTimeout(() => {
@@ -338,10 +339,10 @@ function playSplashGif() {
 // --- Game Loop ---
 let lastFrameTime = 0;
 function gameLoop(currentTime) {
-    // MODIFICATION: Always draw hose, water stain, and flowers if active, or just if game is frozen but water is active
+    // Always draw hose, water stain, and flowers, even if game is frozen for GIF/blob display
     ctx.clearRect(0, 0, W, H);
     drawHose();
-    drawWaterStain();
+    drawWaterStain(); // This will draw the triangle if active
     flowers.forEach(drawFlower);
 
     if (!gameActive) {
@@ -438,7 +439,6 @@ window.addEventListener('touchstart', (event) => {
 // Initial canvas setup
 window.addEventListener('load', () => {
     resizeCanvas();
-    // Start game automatically for Telegram Web Apps, or show a start button
     messageDisplay.style.display = 'block';
     messageDisplay.textContent = 'Tap to Start!';
     tittiesImage.onload = () => {
